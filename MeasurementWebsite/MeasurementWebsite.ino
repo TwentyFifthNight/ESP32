@@ -152,24 +152,28 @@ void PrintWykres(int dataLen,int color, float* chartData) {
   if (color == 3) sOut += "<g stroke=\"yellow\">\n";
   float miny=1000;
   float maxy=-1000;
-  float dx,skala;
-  int newX,x,y,newY;
+  float dx, scale;
+  int newX, x, y, newY;
   for (int i=1; i<dataLen ; i++) {
     if(chartData[i]>maxy)maxy=chartData[i];
     if(chartData[i]<miny)miny=chartData[i];
   }
 
-  dx=abs(maxy-miny);
-  if(dx>0)  skala=120/dx; 
-  else skala=75;
 
-  y=int((chartData[1]-miny)*skala);
+  int lineMargin = 5; //odstęp lini od krawędzi pionowych wykresu(w procentach)
+
+  dx=abs(maxy-miny);
+  if(dx>0)  scale=(100 - lineMargin * 2)/dx; 
+  else scale = 100 - lineMargin * 2;
+
+  y=int(lineMargin + (chartData[1]-miny)*scale);
   x=1;
 
   for (int i=2; i<dataLen ; i+=1) {
-    newY=int((chartData[i]-miny)*skala);
+    newY=int(lineMargin + (chartData[i]-miny)*scale
+);
     newX=x+1;
-    sprintf(tempS, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke-width=\"2\" />\n", x, 130-y, newX, 130-newY);
+    sprintf(tempS, "<line x1=\"%d\" y1=\"%d%%\" x2=\"%d\" y2=\"%d%%\" stroke-width=\"2\" />\n", x, 100-y, newX, 100-newY);
     sOut += tempS;
     y = newY; x = newX;
   }
