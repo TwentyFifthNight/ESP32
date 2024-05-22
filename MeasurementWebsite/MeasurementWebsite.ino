@@ -5,6 +5,8 @@
 #include "FS.h"
 #include "SD.h"
 #include "tftUtils.h"
+#include "wifiProperties.h"
+#include "time.h"
 
 uint16_t dataSize = 0;
 const uint16_t dataTargetSize = 400;
@@ -12,16 +14,17 @@ uint16_t startIndex = 0;
 float dataT[dataTargetSize] = {0.0};
 float dataP[dataTargetSize] = {0.0};
 float dataH[dataTargetSize] = {0.0};
+int lineMargin = 5; //distance of the line from the vertical edges of the chart(percents)
 
 WebServer webServer(80);
-const char *ssid = "*******";
-const char *password = "*******";
 String sOut="";
 byte autorefresh = 120;
 int chartWidth = 80;
 int chartHeight = 10;
 
-String timestamp = "12:23:33";
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = 3600;
+const int   daylightOffset_sec = 3600;
 
 Adafruit_BME280 bme;
 float bmpT, bmpP, bmpH = 0;
@@ -44,6 +47,8 @@ void setup(void) {
   Serial.println(ssid);
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
+
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
   webServer.on("/", handleRoot);
   webServer.onNotFound(handleNotFound);
@@ -74,7 +79,16 @@ void loop(void) {
   
   if(measurementTime < millis()){
     readBME();
-    drawMeasurements({temperature: bmpT, humidity: bmpH, pressure: (uint16_t)bmpP, timestamp: "12:23:33"}, measurmentCount);
+
+    char currentTime[10];
+    struct tm timeinfo;
+    if(!getLocalTime(&timeinfo)){
+      Serial.println("Failed to obtain time");
+      currentTime = " ";
+    }else{
+      strftime(currentTime, 10, "%H:%M:%S", &timeinfo);
+    }
+    drawMeasurements({temperature: bmpT, humidity: bmpH, pressure: (uint16_t)bmpP, timestamp: currentTime}, measurmentCount);
     
     uint16_t currentIndex = dataSize % dataTargetSize;
     dataT[currentIndex] = bmpT;
@@ -129,7 +143,14 @@ void handleRoot() {
   PrintWykres(dataSize, 3, dataH);
   
   sOut="</div>";
-  sOut+="<br>Current time: "+timestamp;
+
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Failed to obtain time");
+  }else{
+    strftime(tempS, 100, "<br>Current time: %H:%M:%S %Y-%m-%d", &timeinfo);
+    sOut+= tempS;
+  }
   sprintf(tempS, "<br><p>Uptime: %02d:%02d:%02d</p>", hr, mi % 60, sec % 60);
   sOut += tempS;
   sOut+="</body></html>";
@@ -167,8 +188,6 @@ void PrintWykres(int dataLen, int color, float* chartData) {
     if(chartData[i] > maxy) maxy = chartData[i];
     if(chartData[i] < miny) miny = chartData[i];
   }
-
-  int lineMargin = 5; //odstęp lini od krawędzi pionowych wykresu(w procentach)
 
   dx=abs(maxy - miny);
   if(dx > 0)  scale = (100 - lineMargin * 2)/dx; 
