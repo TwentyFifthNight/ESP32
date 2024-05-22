@@ -6,10 +6,12 @@
 #include "SD.h"
 #include "tftUtils.h"
 
-float dataT[1000]={0.0};
-float dataP[1000]={0.0};
-float dataH[1000]={0.0};
 uint16_t dataSize = 0;
+const uint16_t dataTargetSize = 400;
+uint16_t startIndex = 0;
+float dataT[dataTargetSize] = {0.0};
+float dataP[dataTargetSize] = {0.0};
+float dataH[dataTargetSize] = {0.0};
 
 WebServer webServer(80);
 const char *ssid = "*******";
@@ -22,13 +24,11 @@ int chartHeight = 10;
 String timestamp = "12:23:33";
 
 Adafruit_BME280 bme;
-float bmpT,bmpP,bmpH;
+float bmpT, bmpP, bmpH = 0;
 uint8_t selected;
 
 uint16_t measurmentCount = 0;
 unsigned long measurementTime = 0;
-
-void readBME();
 
 void setup(void) {
   Serial.begin(115200);
@@ -74,17 +74,18 @@ void loop(void) {
   
   if(measurementTime < millis()){
     readBME();
-    drawMeasurements({ temperature: bmpT, humidity: bmpH, pressure: (uint16_t)bmpP, timestamp: "12:23:33"}, measurmentCount);
+    drawMeasurements({temperature: bmpT, humidity: bmpH, pressure: (uint16_t)bmpP, timestamp: "12:23:33"}, measurmentCount);
     
-    if(dataSize<=400){
-      dataSize+=1;
-      dataT[dataSize]=bmpT;
-      dataP[dataSize]=bmpP;
-      dataH[dataSize]=bmpH;
-    }else { 
-      dataSize=0;
+    uint16_t currentIndex = dataSize % dataTargetSize;
+    dataT[currentIndex] = bmpT;
+    dataP[currentIndex] = bmpP;
+    dataH[currentIndex] = bmpH;
+    if(dataSize >= dataTargetSize) { 
+      startIndex = (currentIndex + 1) % dataTargetSize;
     }
-    measurementTime = millis() + 1000;
+    dataSize += 1;
+
+    measurementTime = millis() + 500;
   }
 }
 
@@ -106,29 +107,33 @@ void handleRoot() {
   .graph_t{text-align:center;}\
   </style> </head><body>\
   <h1 class=\"font_t\">ESP32 laboratorium</h1>";
-  
-  sOut+="<hr class=\"line_t\"><h1 class=\"font_t\">Temperatura = ";
+  webServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  webServer.send(200, "text/html", sOut);
+
+  sOut="<hr class=\"line_t\"><h1 class=\"font_t\">Temperatura = ";
   sOut+=String(bmpT)+" C";
   sOut+="</h1><br><div class=\"graph_t\">";
+  webServer.sendContent(sOut);
   PrintWykres(dataSize, 1, dataT);
-  
-  sOut+="<hr class=\"line_t\"><h1 class=\"font_t\">Temperatura = ";
+
+  sOut="<hr class=\"line_t\"><h1 class=\"font_t\">Ciśnienie = ";
   sOut+=String(bmpP)+" hPa";
   sOut+="</h1><br>";
+  webServer.sendContent(sOut);
   PrintWykres(dataSize, 2, dataP);
   
-  sOut+="<hr class=\"line_t\"><h1 class=\"font_t\">Temperatura = ";
+  sOut="<hr class=\"line_t\"><h1 class=\"font_t\">Wilgotność = ";
   sOut+=String(bmpH)+" %";
   sOut+="</h1><br>";
+  webServer.sendContent(sOut);
   PrintWykres(dataSize, 3, dataH);
   
-  sOut+="</div>";
+  sOut="</div>";
   sOut+="<br>Current time: "+timestamp;
   sprintf(tempS, "<br><p>Uptime: %02d:%02d:%02d</p>", hr, mi % 60, sec % 60);
   sOut += tempS;
   sOut+="</body></html>";
-  
-  webServer.send(200, "text/html", sOut);
+  webServer.sendContent(sOut);
 }
 
 void handleNotFound(){
@@ -143,43 +148,58 @@ void handleNotFound(){
   webServer.send(404, "text/html", message);
 }
 
-void PrintWykres(int dataLen,int color, float* chartData) {
+void PrintWykres(int dataLen, int color, float* chartData) {
   char tempS[100];
-  sOut += "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\"width=\"80vw\" height=\"10vh\">\n";
-  sOut += "<rect width=\"80vw\" height=\"10vh\" fill=\"rgb(200, 200, 200)\" stroke-width=\"1\" stroke=\"rgb(255, 255, 255)\" />\n";
-  if (color == 1) sOut += "<g stroke=\"red\">\n";
-  if (color == 2) sOut += "<g stroke=\"blue\">\n";
-  if (color == 3) sOut += "<g stroke=\"yellow\">\n";
+  String output = "";
+  output += "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\"width=\"80vw\" height=\"10vh\">\n";
+  output += "<rect width=\"80vw\" height=\"10vh\" fill=\"rgb(200, 200, 200)\" stroke-width=\"1\" stroke=\"rgb(255, 255, 255)\" />\n";
+  if (color == 1) output += "<g stroke=\"red\">\n";
+  if (color == 2) output += "<g stroke=\"blue\">\n";
+  if (color == 3) output += "<g stroke=\"yellow\">\n";
   float miny=1000;
   float maxy=-1000;
   float dx, scale;
-  int newX, x, y, newY;
-  for (int i=1; i<dataLen ; i++) {
-    if(chartData[i]>maxy)maxy=chartData[i];
-    if(chartData[i]<miny)miny=chartData[i];
-  }
+  float y, newY;
+  int x, newX;
 
+  dataLen = (dataTargetSize > dataLen ? dataLen : dataTargetSize);
+  for (int i=0; i< dataLen ; i++) {
+    if(chartData[i] > maxy) maxy = chartData[i];
+    if(chartData[i] < miny) miny = chartData[i];
+  }
 
   int lineMargin = 5; //odstęp lini od krawędzi pionowych wykresu(w procentach)
 
-  dx=abs(maxy-miny);
-  if(dx>0)  scale=(100 - lineMargin * 2)/dx; 
+  dx=abs(maxy - miny);
+  if(dx > 0)  scale = (100 - lineMargin * 2)/dx; 
   else scale = 100 - lineMargin * 2;
 
-  y=int(lineMargin + (chartData[1]-miny)*scale);
-  x=1;
+  y = lineMargin + (chartData[startIndex] - miny) * scale;
+  x = 0;
 
-  for (int i=2; i<dataLen ; i+=1) {
-    newY=int(lineMargin + (chartData[i]-miny)*scale
-);
-    newX=x+1;
-    sprintf(tempS, "<line x1=\"%d\" y1=\"%d%%\" x2=\"%d\" y2=\"%d%%\" stroke-width=\"2\" />\n", x, 100-y, newX, 100-newY);
-    sOut += tempS;
-    y = newY; x = newX;
+  for (int i=(startIndex + 1) % dataTargetSize; i<dataLen ; i+=1) {
+    newY = lineMargin + (chartData[i] - miny) * scale;
+
+    newX = x + 1;
+    sprintf(tempS, "<line x1=\"%d\" y1=\"%f%%\" x2=\"%d\" y2=\"%f%%\" stroke-width=\"2\" />\n", x, 100-y, newX, 100-newY);
+    output += tempS;
+    y = newY; 
+    x = newX;
   }
-  sOut += "</g>\n"; 
-  sOut += "</svg>\n";
-  // webServer.send(200, "image/svg+xml", sOut);
+
+  for (int i=0; i<startIndex ; i+=1) {
+    newY = lineMargin + (chartData[i] - miny) * scale;
+
+    newX = x + 1;
+    sprintf(tempS, "<line x1=\"%d\" y1=\"%f%%\" x2=\"%d\" y2=\"%f%%\" stroke-width=\"2\" />\n", x, 100-y, newX, 100-newY);
+    output += tempS;
+    y = newY; 
+    x = newX;
+  }
+
+  output += "</g>\n"; 
+  output += "</svg>\n";
+  webServer.sendContent(output);
 }
 
 void writeFile(fs::FS &fs, const char * path, const char * message){
