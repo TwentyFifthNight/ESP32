@@ -9,7 +9,7 @@
 #include "time.h"
 
 uint16_t dataSize = 0;
-const uint16_t dataTargetSize = 400;
+const uint16_t dataTargetSize = 1000;
 uint16_t startIndex = 0;
 float dataT[dataTargetSize] = {0.0};
 float dataP[dataTargetSize] = {0.0};
@@ -84,7 +84,7 @@ void loop(void) {
     struct tm timeinfo;
     if(!getLocalTime(&timeinfo)){
       Serial.println("Failed to obtain time");
-      currentTime = " ";
+      sprintf(currentTime, "");
     }else{
       strftime(currentTime, 10, "%H:%M:%S", &timeinfo);
     }
@@ -99,7 +99,7 @@ void loop(void) {
     }
     dataSize += 1;
 
-    measurementTime = millis() + 500;
+    measurementTime = millis() + 1000;
   }
 }
 
@@ -116,33 +116,34 @@ void handleRoot() {
   <meta http-equiv=\"Content-Language\" content=\"pl\" />\
   <title>ESP32</title>\
   <style> html{font-family:Verdana;display:inline-block;backgroundcolor:#FFF;}\
-  .font_t{color:white;text-align:center;text-decoration:none;color:#111; fontweight:bold;padding:8px;margin:8px;}\
-  .line_t{border-top:3pxsolid;border-image: linear-gradient(toleft,#111,#E00,#111);border-image-slice:1;}\
-  .graph_t{text-align:center;}\
+  .font_t{color:white;text-align:center;text-decoration:none;color:#111; font-weight:bold;padding:8px;margin:8px;}\
+  .line_t{border-top:2px solid;border-image: linear-gradient(to left,#111,#E00,#111);border-image-slice:1;}\
+  .graph_t{}\
+  .main_content{text-align:center;}\
   </style> </head><body>\
   <h1 class=\"font_t\">ESP32 laboratorium</h1>";
   webServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
   webServer.send(200, "text/html", sOut);
 
-  sOut="<hr class=\"line_t\"><h1 class=\"font_t\">Temperatura = ";
+  sOut="<div class=\"main_content\"><hr class=\"line_t\"><h1 class=\"font_t\">Temperatura = ";
   sOut+=String(bmpT)+" C";
   sOut+="</h1><br><div class=\"graph_t\">";
   webServer.sendContent(sOut);
   PrintWykres(dataSize, 1, dataT);
 
-  sOut="<hr class=\"line_t\"><h1 class=\"font_t\">Ciśnienie = ";
+  sOut="</div><hr class=\"line_t\"><h1 class=\"font_t\">Ciśnienie = ";
   sOut+=String(bmpP)+" hPa";
-  sOut+="</h1><br>";
+  sOut+="</h1><br><div class=\"graph_t\">";
   webServer.sendContent(sOut);
   PrintWykres(dataSize, 2, dataP);
   
-  sOut="<hr class=\"line_t\"><h1 class=\"font_t\">Wilgotność = ";
+  sOut="</div><hr class=\"line_t\"><h1 class=\"font_t\">Wilgotność = ";
   sOut+=String(bmpH)+" %";
-  sOut+="</h1><br>";
+  sOut+="</h1><br><div class=\"graph_t\">";
   webServer.sendContent(sOut);
   PrintWykres(dataSize, 3, dataH);
   
-  sOut="</div>";
+  sOut="</div></div>";
 
   struct tm timeinfo;
   if(!getLocalTime(&timeinfo)){
@@ -181,7 +182,8 @@ void PrintWykres(int dataLen, int color, float* chartData) {
   float maxy=-1000;
   float dx, scale;
   float y, newY;
-  int x, newX;
+  unsigned int x, newX;
+  unsigned int maxElements = 400;
 
   dataLen = (dataTargetSize > dataLen ? dataLen : dataTargetSize);
   for (int i=0; i< dataLen ; i++) {
@@ -198,20 +200,34 @@ void PrintWykres(int dataLen, int color, float* chartData) {
 
   for (int i=(startIndex + 1) % dataTargetSize; i<dataLen ; i+=1) {
     newY = lineMargin + (chartData[i] - miny) * scale;
-
     newX = x + 1;
+
     sprintf(tempS, "<line x1=\"%d\" y1=\"%f%%\" x2=\"%d\" y2=\"%f%%\" stroke-width=\"2\" />\n", x, 100-y, newX, 100-newY);
     output += tempS;
+
+    if(maxElements < newX){
+      webServer.sendContent(output);
+      output = "";
+      maxElements += 400;
+    }
+
     y = newY; 
     x = newX;
   }
 
   for (int i=0; i<startIndex ; i+=1) {
     newY = lineMargin + (chartData[i] - miny) * scale;
-
     newX = x + 1;
+
     sprintf(tempS, "<line x1=\"%d\" y1=\"%f%%\" x2=\"%d\" y2=\"%f%%\" stroke-width=\"2\" />\n", x, 100-y, newX, 100-newY);
     output += tempS;
+
+    if(maxElements < newX){
+      webServer.sendContent(output);
+      output = "";
+      maxElements += 400;
+    }
+
     y = newY; 
     x = newX;
   }
