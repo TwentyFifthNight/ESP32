@@ -9,18 +9,18 @@
 #include "time.h"
 
 uint16_t dataSize = 0;
-const uint16_t dataTargetSize = 1000;
+const uint16_t dataTargetSize = 300;
 uint16_t startIndex = 0;
 float dataT[dataTargetSize] = {0.0};
 float dataP[dataTargetSize] = {0.0};
 float dataH[dataTargetSize] = {0.0};
-int lineMargin = 5; //distance of the line from the vertical edges of the chart(percents)
+const int lineMargin = 5; //distance of the line from the vertical edges of the chart(percents)
 
 WebServer webServer(80);
 String sOut="";
-byte autorefresh = 120;
-int chartWidth = 80;
-int chartHeight = 10;
+const uint16_t autorefresh = 2000;
+String chartWidth = "80";
+String chartHeight = "10";
 
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 3600;
@@ -32,6 +32,7 @@ uint8_t selected;
 
 uint16_t measurmentCount = 0;
 unsigned long measurementTime = 0;
+
 
 void setup(void) {
   Serial.begin(115200);
@@ -120,6 +121,10 @@ void handleRoot() {
   .line_t{border-top:2px solid;border-image: linear-gradient(to left,#111,#E00,#111);border-image-slice:1;}\
   .graph_t{}\
   .main_content{text-align:center;}\
+  .axismark-main {stroke: black;stroke-width: 1;}\
+  .axismark-second {stroke: black;stroke-width: 1;}\
+  .axisnumber-x {font-size: 12px;}\
+  .axisnumber-y {font-size: 12px;color: black;}\
   </style> </head><body>\
   <h1 class=\"font_t\">ESP32 laboratorium</h1>";
   webServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
@@ -131,13 +136,13 @@ void handleRoot() {
   webServer.sendContent(sOut);
   PrintWykres(dataSize, 1, dataT);
 
-  sOut="</div><hr class=\"line_t\"><h1 class=\"font_t\">Ciśnienie = ";
+  sOut="</div><br><hr class=\"line_t\"><h1 class=\"font_t\">Ciśnienie = ";
   sOut+=String(bmpP)+" hPa";
   sOut+="</h1><br><div class=\"graph_t\">";
   webServer.sendContent(sOut);
   PrintWykres(dataSize, 2, dataP);
   
-  sOut="</div><hr class=\"line_t\"><h1 class=\"font_t\">Wilgotność = ";
+  sOut="</div><br><hr class=\"line_t\"><h1 class=\"font_t\">Wilgotność = ";
   sOut+=String(bmpH)+" %";
   sOut+="</h1><br><div class=\"graph_t\">";
   webServer.sendContent(sOut);
@@ -171,19 +176,17 @@ void handleNotFound(){
 }
 
 void PrintWykres(int dataLen, int color, float* chartData) {
-  char tempS[100];
+  char tempS[150];
   String output = "";
-  output += "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\"width=\"80vw\" height=\"10vh\">\n";
-  output += "<rect width=\"80vw\" height=\"10vh\" fill=\"rgb(200, 200, 200)\" stroke-width=\"1\" stroke=\"rgb(255, 255, 255)\" />\n";
-  if (color == 1) output += "<g stroke=\"red\">\n";
-  if (color == 2) output += "<g stroke=\"blue\">\n";
-  if (color == 3) output += "<g stroke=\"yellow\">\n";
+  output += "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\"width=\""+ chartWidth + "vw\" height=\"" + chartHeight + "vh\" overflow=visible>\n";
+  output += "<rect width=\"" + chartWidth + "vw\" height=\"" + chartHeight + "vh\" fill=\"rgb(200, 200, 200)\" stroke-width=\"1\" stroke=\"rgb(255, 255, 255)\" />\n";
   float miny=1000;
   float maxy=-1000;
   float dx, scale;
   float y, newY;
-  unsigned int x, newX;
+  float x, newX;
   unsigned int maxElements = 400;
+  float xShift = 100 * 1. / dataTargetSize;
 
   dataLen = (dataTargetSize > dataLen ? dataLen : dataTargetSize);
   for (int i=0; i< dataLen ; i++) {
@@ -192,17 +195,63 @@ void PrintWykres(int dataLen, int color, float* chartData) {
   }
 
   dx=abs(maxy - miny);
+  
   if(dx > 0)  scale = (100 - lineMargin * 2)/dx; 
-  else scale = 100 - lineMargin * 2;
+  else scale = (100 - lineMargin * 2);
+
+  output += "<g id=\"axis-y-values\" class=\"axisnumber-y\" text-anchor=\"end\">";
+  sprintf(tempS, "<text y=\"%d%%\" x=\"%d%%\">%.2f</text>", 0 + lineMargin, -1, maxy);
+  output += tempS;
+  sprintf(tempS, "<text y=\"%d%%\" x=\"%d%%\">%.2f</text>", 100 - lineMargin, -1, miny);
+  output += tempS;
+  output += "</g>";
+
+  output += "<g id=\"axis-x-values\" class=\"axisnumber-x\" text-anchor=\"middle\">";
+
+  unsigned int step = dataTargetSize / 10;
+  for(unsigned int i = 0; i <= dataTargetSize; i += step){
+    sprintf(tempS, "<text y=\"%d%%\" x=\"%f%%\">%d</text>", 120, xShift * i, i);
+    output += tempS;
+  }
+  output += "</g>";
+
+  output += "<defs xmlns=\"http://www.w3.org/2000/svg\">\
+  <pattern id=\"x-axismark-main\" x=\"0\" width=\"10%\" height=\"6\" patternUnits=\"userSpaceOnUse\">\
+  <line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"6\" class=\"axismark-main\"/>\
+  </pattern>\
+  <pattern id=\"x-axismark-second\" x=\"0\" width=\"2.5%\" height=\"3\" patternUnits=\"userSpaceOnUse\">\
+  <line x1=\"0\" y1=\"-1\" x2=\"0\" y2=\"3\" class=\"axismark-second\"/>\
+  </pattern>";
+  sprintf(tempS, "<pattern id=\"y-axismark-main\" y=\"-%d%%\" width=\"6\" height=\"%d%%\" patternUnits=\"userSpaceOnUse\">", lineMargin, 50 - lineMargin);
+  output += tempS;
+  output += "<line x1=\"-1\" y1=\"0\" x2=\"6\" y2=\"0\" class=\"axismark-main\"/>\
+  </pattern>";
+  sprintf(tempS, "<pattern id=\"y-axismark-second\" y=\"-%d%%\" width=\"3\" height=\"%f%%\" patternUnits=\"userSpaceOnUse\">", lineMargin, (50 - lineMargin * 1.) / 4);
+  output += tempS;
+  output += "<line x1=\"-1\" y1=\"0\" x2=\"3\" y2=\"0\" class=\"axismark-second\"/>\
+  </pattern>\
+  </defs>";
+
+  output += "<g transform=\"scale(1, -1)\">\
+  <rect id=\"x-axismark2\" x=\"0\" y=\"-103%\" width=\"100%\" height=\"3\" fill=\"url(#x-axismark-second)\"/>\
+  <rect id=\"x-axismark\" x=\"0\" y=\"-106%\" width=\"101%\" height=\"6\" fill=\"url(#x-axismark-main)\"/>\
+  <rect id=\"y-axismark2\" x=\"-3\" y=\"-100%\" width=\"3\" height=\"100%\" fill=\"url(#y-axismark-second)\"/>\
+  <rect id=\"y-axismark\" x=\"-6\" y=\"-100%\" width=\"6\" height=\"101%\" fill=\"url(#y-axismark-main)\"/>\
+  </g>";
+  webServer.sendContent(output);
+  output = "";
+
+  if (color == 1) output += "<g stroke=\"red\">\n";
+  if (color == 2) output += "<g stroke=\"blue\">\n";
+  if (color == 3) output += "<g stroke=\"yellow\">\n";
 
   y = lineMargin + (chartData[startIndex] - miny) * scale;
   x = 0;
 
   for (int i=(startIndex + 1) % dataTargetSize; i<dataLen ; i+=1) {
     newY = lineMargin + (chartData[i] - miny) * scale;
-    newX = x + 1;
-
-    sprintf(tempS, "<line x1=\"%d\" y1=\"%f%%\" x2=\"%d\" y2=\"%f%%\" stroke-width=\"2\" />\n", x, 100-y, newX, 100-newY);
+    newX = x + xShift;
+    sprintf(tempS, "<line x1=\"%f%%\" y1=\"%f%%\" x2=\"%f%%\" y2=\"%f%%\" stroke-width=\"2\" />\n", x, 100-y, newX, 100-newY);
     output += tempS;
 
     if(maxElements < newX){
@@ -217,9 +266,9 @@ void PrintWykres(int dataLen, int color, float* chartData) {
 
   for (int i=0; i<startIndex ; i+=1) {
     newY = lineMargin + (chartData[i] - miny) * scale;
-    newX = x + 1;
+    newX = x + xShift;
 
-    sprintf(tempS, "<line x1=\"%d\" y1=\"%f%%\" x2=\"%d\" y2=\"%f%%\" stroke-width=\"2\" />\n", x, 100-y, newX, 100-newY);
+    sprintf(tempS, "<line x1=\"%f%%\" y1=\"%f%%\" x2=\"%f%%\" y2=\"%f%%\" stroke-width=\"2\" />\n", x, 100-y, newX, 100-newY);
     output += tempS;
 
     if(maxElements < newX){
